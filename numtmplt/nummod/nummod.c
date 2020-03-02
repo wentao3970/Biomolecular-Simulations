@@ -22,7 +22,8 @@ void print_help_args (char* app_name);
 void print_args (char* app_name);
 void my_rotate_atomgrp (struct atomgrp* prot, struct atomgrp* rotprot, struct rmatrix* rmatrix, struct tvector* center_of_rotation);
 void perturb_atomgrp (struct atomgrp* ag, struct atomgrp* moved_ag, double translate_rangei, double rotate_range, struct tvector* center_of_rotation);
-
+float calEnergy(struct atomgrp* A, struct atomgrp* B, struct prms* prms);
+float* calGradients(struct atomgrp* agA, struct atomgrp* agB, struct prms* prms);
 #define MAXSLEN 200
 char* ATOM_PRM_FILE;
 
@@ -97,11 +98,26 @@ int main (int argc, char* argv[])
 
 
 	struct tvector* temp_tv = (struct tvector*) mymalloc (sizeof (struct tvector));
-	temp_tv->X = 10;
-	temp_tv->Y = 0;
-	temp_tv->Z = 0;
-	struct atomgrp* agA_moved = copy_atomgrp(agA);
-	translate_atomgrp (agA_moved, agA_moved,temp_tv); // translate agA 
+	//temp_tv->X = 10;
+	//temp_tv->Y = 0;
+	//temp_tv->Z = 0;
+	
+	// Create two protein A and B
+ 	struct atomgrp* agA_moved = copy_atomgrp(agA);
+	struct atomgrp* agB_copy = copy_atomgrp(agB);
+	
+	// Caculate the CoM of A and B
+	struct tvector* cmA = center_of_mass(agA_moved);
+	struct tvector* cmB = center_of_mass(agB_copy);
+	
+	// Assign the temp_tv coordinate
+	temp_tv -> X = 0.5* (cmA->X - cmB->X);
+	temp_tv -> Y = 0.5* (cmA->Y - cmB->Y);
+	temp_tv -> Z = 0.5* (cmA->Z - cmB->Z);
+	
+	// Translate agA
+	translate_atomgrp (agA_moved, agA_moved,temp_tv); 
+	
 	char* current_ofile = (char*) mymalloc (100 * sizeof (char)); 
 	sprintf (current_ofile, "test%d.ms", 1);
 	fprint_file_atomgrp(current_ofile, agA_moved, prms);
@@ -114,20 +130,85 @@ int main (int argc, char* argv[])
 	clock_t start, end;
 	double elapsed;
 	float E=0;
+	//E = calEnergy(agA, agB, prms);
 
 	int i;
 	start = clock();
 	for (i = 0; i < 10; i++)
 	{
-		E = complex_energy (agA, agB, prms);
+		E = calEnergy (agA, agB, prms);
 	}
 	end = clock();
 	elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
 	printf ("time: %.3f\n", elapsed);
-	printf("Energy %.3f\n",E);
+	printf("Energy %.3f\n", E); 
+	printf("Gradients array is: ", calGradients(agA, agB, prms));
 
+    sizeofarray = sizeof(calGradients(agA, agB, prms)) / sizeof(calGradients(agA, agB, prms)[0])
+    for (int i=0; i 
 
 	return EXIT_SUCCESS;
+}
+
+// Q2
+float calEnergy(struct atomgrp* agA, struct atomgrp* agB, struct prms* prms ){
+	float E = 0;
+	float Etemp = 0;
+	float x;
+	float y;
+	float z;
+	float dist;
+	int i;
+	int j;
+
+	for (i = 0; i < agA->natoms; i++){
+		for(j = 0; j < agB->natoms; j++){
+			x = agA->atoms[i].X - agB->atoms[j].X;
+			y = agA->atoms[i].Y - agB->atoms[j].Y;
+			z = agA->atoms[i].Z - agB->atoms[j].Z;
+			dist = sqrt(pow(x,2)+pow(y,2)+pow(z,2));
+			Etemp = (prms->chrgs[agA->atoms[i].atom_typen])*(prms->chrgs[agB->atoms[j].atom_typen])/dist; 
+			E = E + Etemp; 
+		}
+	}
+	return E;
+}
+
+//Q3
+
+float* calGradients(struct atomgrp* agA, struct atomgrp* agB, struct prms* prms ){
+	float E = 0;
+	float Etemp = 0;
+	float x1,x2;
+	float y1,y2;
+	float z1,z2;
+	float dist;
+	int i;
+	int j;
+	float Fx;
+	float Fy;
+	float Fz;
+	float arr[3*agA->natoms];
+	for (i = 0; i < agA->natoms; i++){
+		for(j = 0; j < agB->natoms; j++){
+			x1 = agA->atoms[i].X; 
+			x2 = agB->atoms[j].X;
+			y1 = agA->atoms[i].Y;
+			y2 = agB->atoms[j].Y;
+			z1 = agA->atoms[i].Z;
+			z2 = agB->atoms[j].Z;
+			dist = sqrt(pow(x1-x2,2)+pow(y1-y2,2)+pow(z1-z2,2));
+			Etemp = (prms->chrgs[agA->atoms[i].atom_typen])*(prms->chrgs[agB->atoms[j].atom_typen]);
+			Fx = Fx + (-0.5)*3*dist*2*(x1-x2)*Etemp; 
+			Fy = Fy + (-0.5)*3*dist*2*(y1-y2)*Etemp;
+       		Fz = Fz + (-0.5)*3*dist*2*(z1-z2)*Etemp;
+						
+		}
+		arr[i+0] = Fx;
+		arr[i+1] = Fy;
+		arr[i+2] = Fz;
+	}
+	return arr;
 }
 
 void print_help_args (char* app_name)
